@@ -7,8 +7,8 @@ from src.constants.config import path_account, path_transactions
 def load_degiro_data():
     df_acc = load_account()
     df_trans = load_transactions()
-    df_trans.head()
-    return df_acc, df_trans
+    df_dailyportfolio = generate_daily_totals(df_trans)
+    return df_acc, df_trans, df_dailyportfolio
 
 
 def load_account():
@@ -97,6 +97,31 @@ def load_transactions():
         ]
     ]
     df.to_csv("data/processed/transactions.csv", index=False)
+    return df
+
+
+def generate_daily_totals(df):
+    # create daily totals:
+    start_date = df["Timestamp"].min().replace(day=1)
+    end_date = pd.Timestamp.today().replace(day=1)
+    month_starts = pd.date_range(start=start_date, end=end_date, freq="MS")
+
+    # Generate portfolio snapshots for each first-of-month date
+    portfolio_snapshots = [
+        df[df["Timestamp"] <= date]
+        .groupby("Product", as_index=False)["Aantal"]
+        .sum()
+        .query("Aantal != 0")
+        .assign(SnapshotDate=date)
+        for date in month_starts
+    ]
+
+    # Combine and export the overview
+    df_portfolio_overview = pd.concat(
+        portfolio_snapshots, ignore_index=True
+    ).sort_values(["SnapshotDate", "Product"])
+
+    df_portfolio_overview.to_csv("data/processed/daily_portfolio.csv", index=False)
     return df
 
 
