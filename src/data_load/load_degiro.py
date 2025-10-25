@@ -109,7 +109,7 @@ def generate_daily_totals(df):
     # Generate portfolio snapshots for each first-of-month date
     portfolio_snapshots = [
         df[df["Timestamp"] <= date]
-        .groupby("Product", as_index=False)["Aantal"]
+        .groupby(["Product", "ISIN"], as_index=False)["Aantal"]
         .sum()
         .query("Aantal != 0")
         .assign(SnapshotDate=date)
