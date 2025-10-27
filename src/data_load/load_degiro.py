@@ -102,9 +102,9 @@ def load_transactions():
 
 def generate_daily_totals(df):
     # create daily totals:
-    start_date = df["Timestamp"].min().replace(day=1)
-    end_date = pd.Timestamp.today().replace(day=1)
-    month_starts = pd.date_range(start=start_date, end=end_date, freq="MS")
+    start_date = df["Timestamp"].min()
+    end_date = pd.Timestamp.today()
+    days = pd.date_range(start=start_date, end=end_date, freq="B")
 
     # Generate portfolio snapshots for each first-of-month date
     portfolio_snapshots = [
@@ -113,7 +113,7 @@ def generate_daily_totals(df):
         .sum()
         .query("Aantal != 0")
         .assign(SnapshotDate=date)
-        for date in month_starts
+        for date in days
     ]
 
     # Combine and export the overview

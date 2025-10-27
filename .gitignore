@@ -209,4 +209,5 @@ __marimo__/
 # folders
 data/raw
 data/processed
+data/db
 .DS_Store
