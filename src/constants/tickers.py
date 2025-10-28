@@ -28,3 +28,5 @@ isin_to_ticker = {
     "NL0000440584": "ORDI",
     "NL0011821202": "INGA.AS",
 }
+
+currencies = ["EURUSD=X", "GBPEUR=X"]
