@@ -77,6 +77,10 @@ def load_transactions():
         df["Datum"] + " " + df["Tijd"], format="%d-%m-%Y %H:%M"
     )
 
+    # convert string to floats
+    df["Koers"] = df["Koers"].str.replace(",", ".").astype(float)
+    df["Wisselkoers"] = df["Wisselkoers"].str.replace(",", ".").astype(float)
+
     # convert values to eur
     df["Koers_EUR"] = np.where(
         df["FX koers"] != "EUR", df["Koers"] / df["Wisselkoers"], df["Koers"]
