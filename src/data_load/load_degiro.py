@@ -127,6 +127,3 @@ def generate_daily_totals(df):
 
     df_portfolio_overview.to_csv("data/processed/daily_portfolio.csv", index=False)
     return df
-
-
-load_degiro_data()
