@@ -14,7 +14,9 @@ dependencies = [
     "plotly (>=5.24.1,<6.0.0)",
     "ruff (>=0.14.0,<0.15.0)",
     "black (>=25.9.0,<26.0.0)",
-    "pandas-datareader (>=0.10.0,<0.11.0)"
+    "pandas-datareader (>=0.10.0,<0.11.0)",
+    "openpyxl (>=3.1.5,<4.0.0)",
+    "streamlit (>=1.56.0,<2.0.0)"
 ]
 
 [build-system]

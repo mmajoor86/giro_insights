@@ -1,129 +1,96 @@
 import pandas as pd
+from pandas import DataFrame
+from typing import Tuple
 import numpy as np
 
-from src.constants.config import path_account, path_transactions
+
+from src.constants.config import (
+    path_raw_trans,
+    path_raw_acc,
+    path_proc_acc,
+    path_proc_trans,
+)
+
+from src.data_load.utils import isin_to_ticker
 
 
-def load_degiro_data():
+def load_degiro_data() -> Tuple[DataFrame, DataFrame, DataFrame]:
+    """Load DEGIRO account & transactions data and derive daily portfolio data."""
     df_acc = load_account()
     df_trans = load_transactions()
-    df_dailyportfolio = generate_daily_totals(df_trans)
-    return df_acc, df_trans, df_dailyportfolio
+    return df_acc, df_trans
 
 
-def load_account():
-    # data cleaning
-    df = pd.read_csv(path_account)
+def load_account() -> pd.DataFrame:
+    """Load and clean DeGiro account data."""
+    df = pd.read_excel(path_raw_acc)
 
-    df.columns = [
-        "Datum",
-        "Tijd",
-        "Valutadatum",
-        "Product",
-        "ISIN",
-        "Omschrijving",
-        "FX",
-        "Valuta Mutatie",
-        "Waarde Mutatie",
-        "Valuta Saldo",
-        "Waarde Saldo",
-        "Order Id",
-    ]
-
-    df["Timestamp"] = pd.to_datetime(
-        df["Datum"] + " " + df["Tijd"], format="%d-%m-%Y %H:%M"
-    )
-    df = df.drop(["Datum", "Tijd", "Valuta Saldo", "Waarde Saldo", "Order Id"], axis=1)
-
-    # convert string to floats
-    df["Waarde Mutatie"] = df["Waarde Mutatie"].str.replace(",", ".").astype(float)
-    df["FX"] = df["FX"].str.replace(",", ".").astype(float)
-
-    # convert values to eur
-    df["Waarde_EUR"] = np.where(
-        df["FX"].notna(), df["Waarde Mutatie"] / df["FX"], df["Waarde Mutatie"]
-    )
-    df.to_csv("data/processed/account.csv", index=False)
-    return df
-
-
-def load_transactions():
-    # data cleaning
-    df = pd.read_csv(path_transactions)
-
-    df.columns = [
-        "Datum",
-        "Tijd",
-        "Product",
-        "ISIN",
-        "Beurs",
-        "Uitvoeringsplaats",
-        "Aantal",
-        "Koers",
-        "FX koers",
-        "Lokale waarde",
-        "FX lokale Waarde",
-        "Waarde",
-        "FX ",
-        "Wisselkoers",
-        "Transactiekosten",
-        "FX Transactiekosten",
-        "Totaal",
-        "FX Totaal",
-        "Order ID",
-    ]
-
-    df["Timestamp"] = pd.to_datetime(
-        df["Datum"] + " " + df["Tijd"], format="%d-%m-%Y %H:%M"
-    )
-
-    # convert string to floats
-    df["Koers"] = df["Koers"].str.replace(",", ".").astype(float)
-    df["Wisselkoers"] = df["Wisselkoers"].str.replace(",", ".").astype(float)
-
-    # convert values to eur
-    df["Koers_EUR"] = np.where(
-        df["FX koers"] != "EUR", df["Koers"] / df["Wisselkoers"], df["Koers"]
-    )
-    df["Waarde_EUR"] = df["Aantal"] * df["Koers_EUR"]
-
-    df = df[
+    # Remove and rename columns
+    df = df.drop(
         [
-            "Timestamp",
-            "Order ID",
+            "Tijd",
+            "Valutadatum",
             "Product",
             "ISIN",
-            "Aantal",
-            "Koers_EUR",
-            "Wisselkoers",
-            "Waarde_EUR",
-            "Transactiekosten",
-        ]
+            "Saldo",
+            "FX",
+            "Unnamed: 10",
+            "Order Id",
+        ],
+        axis=1,
+    )
+
+    df = df.rename({"Mutatie": "Valuta", "Unnamed: 8": "Bedrag"}, axis=1)
+
+    # Keep only deposits and dividend payments
+    df = df.loc[
+        df["Omschrijving"]
+        .str.lower()
+        .isin(["dividend", "ideal deposit", "ideal storting"])
     ]
-    df.to_csv("data/processed/transactions.csv", index=False)
+
+    # Store Datum as a date type
+    df["Datum"] = pd.to_datetime(df["Datum"], format="%d-%m-%Y")
+
+    df.to_parquet(path_proc_acc)
+
     return df
 
 
-def generate_daily_totals(df):
-    # create daily totals:
-    start_date = df["Timestamp"].min()
-    end_date = pd.Timestamp.today()
-    days = pd.date_range(start=start_date, end=end_date, freq="B")
+def load_transactions() -> DataFrame:
+    """Load and clean DeGiro transactions data."""
 
-    # Generate portfolio snapshots for each first-of-month date
-    portfolio_snapshots = [
-        df[df["Timestamp"] <= date]
-        .groupby(["Product", "ISIN"], as_index=False)["Aantal"]
-        .sum()
-        .query("Aantal != 0")
-        .assign(SnapshotDate=date)
-        for date in days
-    ]
+    # look up tickers in yahoo finance
+    df = pd.read_excel(path_raw_trans)
 
-    # Combine and export the overview
-    df_portfolio_overview = pd.concat(
-        portfolio_snapshots, ignore_index=True
-    ).sort_values(["SnapshotDate", "Product"])
+    df["Datum"] = pd.to_datetime(df["Datum"], format="%d-%m-%Y")
 
-    df_portfolio_overview.to_csv("data/processed/daily_portfolio.csv", index=False)
+    df["Totale Kosten"] = np.round(
+        df["AutoFX Kosten"] + df["Transactiekosten en/of kosten van derden EUR"], 2
+    )
+    df["Prijs"] = np.round(df["Waarde EUR"] / df["Aantal"], 2)
+    df["Waarde EUR"] = np.round(df["Waarde EUR"], 2)
+
+    # Convert the ISINs code to the yahoo finance ticker to collect the rates later
+    # Yfinance does not track ISINs that have stopped trading, these are removed from the dataset.
+    isins = df["ISIN"].unique()
+    isin_ticker = isin_to_ticker(isins)
+    df["Ticker"] = df["ISIN"].replace(isin_ticker)
+    df = df.loc[df["Ticker"] != df["ISIN"]]
+
+    df = df.filter(
+        [
+            "Datum",
+            "Product",
+            "ISIN",
+            "Ticker",
+            "Uitvoeringsplaats",
+            "Aantal",
+            "Waarde EUR",
+            "Prijs",
+            "Totale Kosten",
+        ]
+    )
+
+    df.to_parquet(path_proc_trans)
     return df
