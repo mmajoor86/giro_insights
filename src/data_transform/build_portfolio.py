@@ -1,7 +1,13 @@
 import pandas as pd
+import numpy as np
 
+from src.constants.config import (
+    path_proc_trans,
+    path_trans_portfolio,
+    path_proc_fx,
+    path_proc_rates,
+)
 
-from src.constants.config import path_proc_trans
 
 
 def generate_portfolio() -> pd.DataFrame:
@@ -35,3 +41,42 @@ def generate_portfolio() -> pd.DataFrame:
     )
 
     return df
+
+
+def enrich_portfolio() -> pd.DataFrame:
+    """Enrich the daily portfolio with stock prices and convert all values to EUR.
+
+    Merges the generated portfolio with stock rates and FX rates, computes
+    EUR-denominated prices, and calculates the total position value per holding.
+
+    Non-EUR positions are converted using the FX rate for that currency on that
+    date. EUR positions receive a rate of 1. Rows where the EUR rate could not
+    be determined are dropped.
+
+    Returns
+    -------
+    pd.DataFrame
+        Enriched portfolio with columns: Datum, Ticker, Aantal, Rate_EUR,
+        Total_Value.
+    """
+    portfolio = generate_portfolio()
+    fx_rates = pd.read_parquet(path_proc_fx)
+    stock_rates = pd.read_parquet(path_proc_rates)
+
+    portfolio = (
+        portfolio.merge(stock_rates, on=["Datum", "Ticker"], how="inner")
+        .merge(fx_rates, on=["Datum", "Currency"], how="left")
+        .sort_values(by=["Datum", "Ticker"], ascending=True)
+    )
+
+    portfolio["Rate"] = np.where(portfolio["Currency"] == "EUR", 1, portfolio["Rate"])
+    portfolio["Rate_EUR"] = portfolio["Close"] / portfolio["Rate"]
+    portfolio["Total_Value"] = portfolio["Aantal"] * portfolio["Rate_EUR"]
+
+    portfolio = portfolio.drop(columns=["Close", "Currency"]).dropna(
+        subset=["Rate_EUR"]
+    )
+
+    portfolio.to_parquet(path_trans_portfolio)
+
+    return portfolio

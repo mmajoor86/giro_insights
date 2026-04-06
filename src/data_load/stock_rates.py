@@ -37,11 +37,27 @@ def collect_currencies(tickers: list[str]) -> dict[str, str]:
     return currencies
 
 
-def load():
-    """Load Stockrates and Currrency denotations from yfinance"""
-    df = pd.read_parquet(path_proc_trans)
-    df_price = collect_prices(df)
-    currency_map = collect_currencies(df["Ticker"].unique().tolist())
-    df_price["Currency"] = df_price["Ticker"].map(currency_map)
-    df_price.to_parquet(path_proc_rates)
-    return df_price
+def load_stockrates() -> pd.DataFrame:
+    """Load stock rates and currency denominations from yfinance.
+
+    Reads processed transactions from parquet, fetches current prices and
+    currency information via yfinance, and persists the enriched result.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing stock prices enriched with currency information,
+        with columns: Ticker, Datum, Price, Currency.
+    """
+    transactions = pd.read_parquet(path_proc_trans)
+
+    tickers = transactions["Ticker"].unique().tolist()
+    prices = collect_prices(transactions)
+    currency_map = collect_currencies(tickers)
+
+    prices["Currency"] = prices["Ticker"].map(currency_map)
+    prices = prices.rename(columns={"Date": "Datum"})
+
+    prices.to_parquet(path_proc_rates)
+
+    return prices

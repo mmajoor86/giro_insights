@@ -14,7 +14,7 @@ from src.constants.config import (
 from src.data_load.utils import isin_to_ticker
 
 
-def load_degiro_data() -> Tuple[DataFrame, DataFrame, DataFrame]:
+def load_degiro() -> Tuple[DataFrame, DataFrame, DataFrame]:
     """Load DEGIRO account & transactions data and derive daily portfolio data."""
     df_acc = load_account()
     df_trans = load_transactions()

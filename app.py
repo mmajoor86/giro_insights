@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from src.data_load.load_degiro import load_degiro_data
+from src.data_load.degiro import load_degiro_data
 from src.data_transform.portfolio import compute_portfolio
 
 st.set_page_config(page_title="DEGIRO Portfolio Insights", layout="wide")
