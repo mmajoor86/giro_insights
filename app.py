@@ -3,10 +3,11 @@ import os
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
-
-from src.data_load.degiro_transactions import load_degiro_data
-from src.data_transform.portfolio import compute_portfolio
+from src.data_load.degiro_account import load_account_data
+from src.data_load.degiro_transactions import load_transactions
+from src.data_load.fx_rates import load_fx
+from src.data_load.stock_rates import load_stockrates
+from src.data_transform.build_portfolio import build_daily_portfolio
 
 st.set_page_config(page_title="DEGIRO Portfolio Insights", layout="wide")
 st.title("DEGIRO Portfolio Insights")
@@ -30,10 +31,15 @@ if run_button:
 
     with st.status("Running portfolio analysis...", expanded=True) as status:
         st.write("Loading DEGIRO exports...")
-        load_degiro_data()
+        load_transactions()
+        load_account_data()
 
         st.write("Fetching stock rates and FX data from yfinance...")
-        df = compute_portfolio()
+        load_stockrates()
+        load_fx()
+
+        st.write("Building portfolio...")
+        df = build_daily_portfolio()
 
         status.update(label="Analysis complete!", state="complete", expanded=False)
 
@@ -42,66 +48,52 @@ if run_button:
 # --- Visualization ---
 if "portfolio_df" in st.session_state:
     df = st.session_state["portfolio_df"].copy()
-    df["Date"] = pd.to_datetime(df["Date"])
+    df["Datum"] = pd.to_datetime(df["Datum"])
 
     # --- Summary Metrics ---
-    latest_date = df["Date"].max()
-    latest = df[df["Date"] == latest_date]
+    latest_date = df["Datum"].max()
+    latest = df[df["Datum"] == latest_date]
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Portfolio Value", f"\u20ac {latest['eur'].sum():,.0f}")
+    col1.metric("Portfolio Value", f"\u20ac {latest['Total_Value'].sum():,.0f}")
     col2.metric("Positions", latest["Product"].nunique())
-    col3.metric("Earliest Date", df["Date"].min().strftime("%b %Y"))
+    col3.metric("Earliest Date", df["Datum"].min().strftime("%b %Y"))
     col4.metric("Latest Date", latest_date.strftime("%d %b %Y"))
 
-    # --- Monthly Stacked Bar + Total Line ---
+    # --- Portfolio Over Time ---
     st.subheader("Portfolio Over Time")
 
-    df["MonthYear"] = df["Date"].dt.to_period("M")
-    last_days = df.groupby("MonthYear")["Date"].max()
-    df_filtered = df[df["Date"].isin(last_days.values)]
+    df["MonthYear"] = df["Datum"].dt.to_period("M")
+    last_days = df.groupby("MonthYear")["Datum"].max()
+    df_filtered = df[df["Datum"].isin(last_days.values)]
 
-    pivot_df = df_filtered.pivot_table(
-        index="Date", columns="Product", values="eur", aggfunc="sum", fill_value=0
-    )
+    # Aggregate: total shares vs cash balance per month
+    is_cash = df_filtered["Product"] == "Cash Balance"
+    monthly = df_filtered.groupby("Datum").agg(
+        Shares=("Total_Value", lambda x: x[~is_cash.loc[x.index]].sum()),
+        Cash=("Total_Value", lambda x: x[is_cash.loc[x.index]].sum()),
+        Invested=("Cumulatieve Inleg", "max"),
+    ).reset_index()
 
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.15,
-        subplot_titles=[
-            "EUR per Product (End of Month)",
-            "Total Portfolio Value (End of Month)",
-        ],
-    )
-
-    for product in pivot_df.columns:
-        fig.add_trace(
-            go.Bar(x=pivot_df.index, y=pivot_df[product], name=product), row=1, col=1
-        )
-
-    monthly_total = pivot_df.sum(axis=1)
-    fig.add_trace(
-        go.Scatter(
-            x=monthly_total.index,
-            y=monthly_total.values,
-            name="Total EUR",
-            mode="lines",
-            line=dict(color="gray", width=2),
-        ),
-        row=2,
-        col=1,
-    )
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=monthly["Datum"], y=monthly["Shares"], name="Shares"))
+    fig.add_trace(go.Bar(x=monthly["Datum"], y=monthly["Cash"], name="Cash Balance"))
+    fig.add_trace(go.Scatter(
+        x=monthly["Datum"],
+        y=monthly["Invested"],
+        name="Amount Invested",
+        mode="lines+markers",
+        line=dict(color="black", width=2, dash="dash"),
+        marker=dict(size=4),
+    ))
 
     fig.update_layout(
         barmode="stack",
-        height=700,
-        legend_title="Product",
+        height=500,
+        yaxis_title="EUR",
         template="plotly_white",
+        hovermode="x unified",
     )
-    fig.update_yaxes(title_text="EUR", row=1, col=1)
-    fig.update_yaxes(title_text="EUR", row=2, col=1)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -109,8 +101,8 @@ if "portfolio_df" in st.session_state:
     st.subheader("Current Holdings")
 
     holdings = (
-        latest.groupby(["Product", "Ticker", "currency"])
-        .agg(Shares=("Aantal", "sum"), Value_EUR=("eur", "sum"))
+        latest.groupby(["Product", "Ticker"])
+        .agg(Shares=("Aantal", "sum"), Value_EUR=("Total_Value", "sum"))
         .reset_index()
         .sort_values("Value_EUR", ascending=False)
     )
@@ -133,13 +125,13 @@ if "portfolio_df" in st.session_state:
     selected = st.selectbox("Select a product", products)
 
     df_product = df_filtered[df_filtered["Product"] == selected]
-    product_monthly = df_product.groupby("Date")["eur"].sum().reset_index()
+    product_monthly = df_product.groupby("Datum")["Total_Value"].sum().reset_index()
 
     fig_product = go.Figure()
     fig_product.add_trace(
         go.Scatter(
-            x=product_monthly["Date"],
-            y=product_monthly["eur"],
+            x=product_monthly["Datum"],
+            y=product_monthly["Total_Value"],
             mode="lines+markers",
             name=selected,
         )

@@ -88,10 +88,16 @@ def enrich_portfolio() -> pd.DataFrame:
     stock_rates = pd.read_parquet(path_proc_rates)
 
     portfolio = (
-        portfolio.merge(stock_rates, on=["Datum", "Ticker"], how="inner")
-        .merge(fx_rates, on=["Datum", "Currency"], how="left")
+        portfolio.merge(stock_rates, on=["Datum", "Ticker"], how="left")
         .sort_values(by=["Datum", "Ticker"], ascending=True)
     )
+    # Forward-fill missing prices per ticker (weekends, holidays, yfinance lag)
+    portfolio[["Close", "Currency"]] = portfolio.groupby("Ticker")[
+        ["Close", "Currency"]
+    ].ffill()
+
+    portfolio = portfolio.merge(fx_rates, on=["Datum", "Currency"], how="left")
+    portfolio["Rate"] = portfolio.groupby("Ticker")["Rate"].ffill()
 
     portfolio["Rate"] = np.where(portfolio["Currency"] == "EUR", 1, portfolio["Rate"])
     portfolio["Rate_EUR"] = portfolio["Close"] / portfolio["Rate"]
