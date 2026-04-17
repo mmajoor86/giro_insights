@@ -1,18 +1,24 @@
+import logging
+
 import pandas as pd
 import yfinance as yf
 
 from src.constants.config import path_proc_trans, path_proc_rates
 
+logger = logging.getLogger(__name__)
+
 
 def collect_prices(df_port: pd.DataFrame) -> pd.DataFrame:
     """Fetch daily close prices per ticker, starting from first portfolio date."""
-    print("Collecting Stockrates")
+    logger.info("Collecting stock rates")
     all_prices = []
 
     for ticker, group in df_port.groupby("Ticker"):
         start = group["Datum"].min().strftime("%Y-%m-%d")
         try:
-            prices = yf.download(ticker, start=start, auto_adjust=True)["Close"]
+            prices = yf.download(ticker, start=start, auto_adjust=True, progress=False)[
+                "Close"
+            ]
             df_prices = (
                 prices.reset_index()
                 .set_axis(["Date", "Close"], axis=1)
@@ -20,20 +26,20 @@ def collect_prices(df_port: pd.DataFrame) -> pd.DataFrame:
             )
             all_prices.append(df_prices)
         except Exception:
-            print(f"Could not fetch prices for {ticker}")
+            logger.warning("Could not fetch prices for %s", ticker)
 
     return pd.concat(all_prices, ignore_index=True)
 
 
 def collect_currencies(tickers: list[str]) -> dict[str, str]:
     """Get the trading currency for each ticker."""
-    print("Collecting Currencies")
+    logger.info("Collecting currencies")
     currencies = {}
     for t in tickers:
         try:
             currencies[t] = yf.Ticker(t).fast_info["currency"]
         except Exception:
-            print(f"Could not resolve currency for {t}")
+            logger.warning("Could not resolve currency for %s", t)
     return currencies
 
 

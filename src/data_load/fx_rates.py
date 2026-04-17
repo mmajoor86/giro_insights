@@ -1,8 +1,12 @@
+import logging
 from datetime import datetime
-import yfinance as yf
+
 import pandas as pd
+import yfinance as yf
 
 from src.constants.config import path_proc_rates, path_proc_fx
+
+logger = logging.getLogger(__name__)
 
 
 def collect_fx_rates(df_cur) -> pd.DataFrame:
@@ -19,6 +23,7 @@ def collect_fx_rates(df_cur) -> pd.DataFrame:
                 start=row["min_date"].strftime("%Y-%m-%d"),
                 end=max_date,
                 auto_adjust=True,
+                progress=False,
             )["Close"]
             df_rates = (
                 rates.reset_index()
@@ -27,7 +32,7 @@ def collect_fx_rates(df_cur) -> pd.DataFrame:
             )
             all_rates.append(df_rates)
         except Exception:
-            print(f"Could not fetch FX for {ticker}")
+            logger.warning("Could not fetch FX for %s", ticker)
 
     df = pd.concat(all_rates, ignore_index=True)
     return df
