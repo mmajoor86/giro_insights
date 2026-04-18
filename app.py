@@ -52,20 +52,25 @@ if "portfolio_df" in st.session_state:
     df["Datum"] = pd.to_datetime(df["Datum"])
 
     # --- Summary Metrics ---
-    latest_date = df["Datum"].max()
+    latest_date = df.loc[df['Product']!='Cash Balance']["Datum"].max()
     latest = df[df["Datum"] == latest_date]
 
+    total_value = latest["Total_Value"].sum()
+    invested = latest["Cumulatieve Inleg"].max()
+    profit_eur = total_value - invested
+    profit_pct = (profit_eur / invested * 100) if invested else 0
+
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Portfolio Value", f"\u20ac {latest['Total_Value'].sum():,.0f}")
-    col2.metric("Positions", latest["Product"].nunique())
-    col3.metric("Earliest Date", df["Datum"].min().strftime("%b %Y"))
+    col1.metric("Portfolio Value", f"\u20ac {total_value:,.0f}")
+    col2.metric("Profit", f"\u20ac {profit_eur:,.0f}", delta=f"{profit_pct:+.1f}%")
+    col3.metric("Positions", latest["Product"].nunique())
     col4.metric("Latest Date", latest_date.strftime("%d %b %Y"))
 
     # --- Portfolio Over Time ---
     st.subheader("Portfolio Over Time")
 
     df["MonthYear"] = df["Datum"].dt.to_period("M")
-    last_days = df.groupby("MonthYear")["Datum"].max()
+    last_days = df.loc[df['Product']!='Cash Balance'].groupby("MonthYear")["Datum"].max()
     df_filtered = df[df["Datum"].isin(last_days.values)]
 
     # Aggregate: total shares vs cash balance per month
@@ -76,6 +81,10 @@ if "portfolio_df" in st.session_state:
         Invested=("Cumulatieve Inleg", "max"),
     ).reset_index()
 
+    monthly["Total"] = monthly["Shares"] + monthly["Cash"]
+    monthly["Profit_EUR"] = monthly["Total"] - monthly["Invested"]
+    monthly["Profit_pct"] = (monthly["Profit_EUR"] / monthly["Invested"] * 100).round(1)
+
     fig = go.Figure()
     fig.add_trace(go.Bar(x=monthly["Datum"], y=monthly["Shares"], name="Shares"))
     fig.add_trace(go.Bar(x=monthly["Datum"], y=monthly["Cash"], name="Cash Balance"))
@@ -85,6 +94,16 @@ if "portfolio_df" in st.session_state:
         name="Amount Invested",
         mode="lines+markers",
         line=dict(color="black", width=2, dash="dash"),
+        marker=dict(size=4),
+    ))
+    fig.add_trace(go.Scatter(
+        x=monthly["Datum"],
+        y=monthly["Profit_EUR"],
+        name="Profit",
+        mode="lines+markers",
+        text=monthly["Profit_pct"].apply(lambda x: f"{x:+.1f}%"),
+        textposition="top center",
+        line=dict(color="green", width=2),
         marker=dict(size=4),
     ))
 
