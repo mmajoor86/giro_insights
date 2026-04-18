@@ -13,12 +13,16 @@ def collect_prices(df_port: pd.DataFrame) -> pd.DataFrame:
     logger.info("Collecting stock rates")
     all_prices = []
 
+    failed = []
     for ticker, group in df_port.groupby("Ticker"):
         start = group["Datum"].min().strftime("%Y-%m-%d")
         try:
             prices = yf.download(ticker, start=start, auto_adjust=True, progress=False)[
                 "Close"
             ]
+            if prices.empty:
+                failed.append(ticker)
+                continue
             df_prices = (
                 prices.reset_index()
                 .set_axis(["Date", "Close"], axis=1)
@@ -26,7 +30,10 @@ def collect_prices(df_port: pd.DataFrame) -> pd.DataFrame:
             )
             all_prices.append(df_prices)
         except Exception:
-            logger.warning("Could not fetch prices for %s", ticker)
+            failed.append(ticker)
+
+    if failed:
+        logger.warning("Could not fetch prices for: %s", ", ".join(failed))
 
     return pd.concat(all_prices, ignore_index=True)
 
@@ -35,11 +42,16 @@ def collect_currencies(tickers: list[str]) -> dict[str, str]:
     """Get the trading currency for each ticker."""
     logger.info("Collecting currencies")
     currencies = {}
+    failed = []
     for t in tickers:
         try:
             currencies[t] = yf.Ticker(t).fast_info["currency"]
         except Exception:
-            logger.warning("Could not resolve currency for %s", t)
+            failed.append(t)
+
+    if failed:
+        logger.warning("Could not resolve currency for: %s", ", ".join(failed))
+
     return currencies
 
 

@@ -1,13 +1,35 @@
+import logging
 import os
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
 from src.data_load.degiro_account import load_account_data
 from src.data_load.degiro_transactions import load_transactions
 from src.data_load.fx_rates import load_fx
 from src.data_load.stock_rates import load_stockrates
 from src.data_transform.build_portfolio import build_daily_portfolio
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
+
+
+class StreamlitWarningHandler(logging.Handler):
+    """Collects WARNING+ log records so they can be shown in the UI."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.warnings: list[str] = []
+
+    def emit(self, record):
+        self.warnings.append(self.format(record))
+
+
+_warning_handler = StreamlitWarningHandler()
+logging.getLogger().addHandler(_warning_handler)
 
 st.set_page_config(page_title="DEGIRO Portfolio Insights", layout="wide")
 st.title("DEGIRO Portfolio Insights")
@@ -43,6 +65,11 @@ if run_button:
         df = build_daily_portfolio()
 
         status.update(label="Analysis complete!", state="complete", expanded=False)
+
+    if _warning_handler.warnings:
+        for w in _warning_handler.warnings:
+            st.warning(w)
+        _warning_handler.warnings.clear()
 
     st.session_state["portfolio_df"] = df
 
